@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Find the Sentinel-2 and Sentinel-3 satellites passing over you and see, hear and understand their Doppler shift. Code Beyond the Earth, World Space Week 2026.">
+<title>Tepemdeki Sentinel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: kontrol şeridi üstte; solda geçiş listesi, sağda seçili geçiş: istatistikler, geçiş diyagramı + zaman kaydırıcısı, gökyüzü + Doppler eğrisi. Telefonda tek sütun. */
+:root{
+  --bg:#eef1f5; --panel:#ffffff; --fg:#111a27; --muted:#586477; --line:#d5dbe4;
+  --accent:#1d5bd0; --accent-soft:#e3ecfb; --approach:#1d5bd0; --recede:#c2410c; --grid:#e6eaf0;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0b1220; --panel:#121b2c; --fg:#e7ecf4; --muted:#93a0b5; --line:#24314a;
+  --accent:#7eaeff; --accent-soft:#1a2a47; --approach:#7eaeff; --recede:#ff9a5c; --grid:#1b263a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0b1220; --panel:#121b2c; --fg:#e7ecf4; --muted:#93a0b5; --line:#24314a;
+  --accent:#7eaeff; --accent-soft:#1a2a47; --approach:#7eaeff; --recede:#ff9a5c; --grid:#1b263a; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:1120px;margin:0 auto;padding:28px 16px 48px}
+header{display:grid;gap:10px;margin-bottom:22px}
+.toprow{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.langs{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.langs button{background:var(--panel);border:0;padding:4px 10px;font-family:var(--mono);font-size:12px;letter-spacing:.05em;cursor:pointer;color:var(--muted)}
+.langs button+button{border-left:1px solid var(--line)}
+.langs button[aria-pressed="true"]{background:var(--fg);color:var(--panel)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,5vw,46px);line-height:1.05;margin:0;text-wrap:balance}
+.lede{max-width:66ch;margin:0;color:var(--muted)}
+.lede b{color:var(--fg);font-weight:600}
+.formula{font-family:var(--mono);color:var(--fg);background:var(--accent-soft);padding:1px 6px;border-radius:4px;white-space:nowrap}
+
+.controls{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:end;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:18px}
+.field{display:grid;gap:4px}
+.field label,.field .lbl{font-size:12px;color:var(--muted);letter-spacing:.03em}
+select,input,button,textarea{font:inherit;color:var(--fg)}
+select,input[type=number]{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+input[type=number]{width:110px;font-family:var(--mono);font-size:14px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{background:var(--bg);border:0;padding:7px 11px;cursor:pointer;font-size:14px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+.src{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.chip{font-family:var(--mono);font-size:12px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.chip.live{border-color:var(--accent);color:var(--accent)}
+.chip.demo{border-color:var(--recede);color:var(--recede)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.main{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:18px;align-items:start}
+@media (max-width:820px){.main{grid-template-columns:1fr}.passes{max-height:330px}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:0}
+.panel h2{font-family:var(--display);font-weight:500;font-size:18px;margin:0;padding:14px 16px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.panel h2 small{font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400}
+.passes{list-style:none;margin:0;padding:6px;max-height:760px;overflow:auto}
+.passes button{width:100%;display:grid;grid-template-columns:1fr auto;gap:2px 10px;text-align:left;background:none;border:0;border-radius:7px;padding:9px 10px;cursor:pointer}
+.passes button:hover{background:var(--bg)}
+.passes button[aria-current="true"]{background:var(--accent-soft)}
+.p-time{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+.p-sat{font-size:13px;color:var(--muted)}
+.p-el{grid-row:span 2;align-self:center;font-family:var(--mono);font-size:13px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.p-el.hi{border-color:var(--accent);color:var(--accent)}
+.empty{padding:18px 16px;color:var(--muted);font-size:14px}
+
+.detail{display:grid;gap:18px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{background:var(--panel);padding:10px 16px}
+.stat span{display:block;font-size:12px;color:var(--muted)}
+.stat b{font-family:var(--mono);font-weight:500;font-size:18px;font-variant-numeric:tabular-nums}
+
+.fly{padding:12px 16px 4px;display:grid;gap:8px;border-bottom:1px solid var(--line)}
+.flyhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;align-items:baseline}
+.cap{font-size:12px;color:var(--muted);margin:0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px}
+.state{display:flex;align-items:center;gap:8px;font-size:14px;min-height:22px}
+.state i{width:10px;height:10px;border-radius:50%;flex:none}
+#flyCanvas{display:block;width:100%;height:240px}
+.note-sm{font-size:11.5px;color:var(--muted);margin:0}
+.scrub{display:flex;align-items:center;gap:12px;padding:6px 0 10px}
+.scrub input{flex:1;min-width:0;accent-color:var(--accent)}
+.scrub output{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+
+.viz{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:8px;padding:12px 12px 6px}
+@media (max-width:700px){.viz{grid-template-columns:1fr}}
+.viz>div{min-width:0;position:relative}
+.viz .cap{margin:2px 4px 6px}
+svg text{font-family:var(--mono);font-size:11px;fill:var(--muted)}
+#sky{width:100%;max-width:300px;display:block;margin:0 auto}
+#chartBox{position:relative}
+#chart{display:block;width:100%;height:270px;touch-action:pan-y}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:12px;line-height:1.45;white-space:nowrap;box-shadow:0 4px 14px rgb(0 0 0 / .12)}
+.actions{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:4px 16px 16px}
+.btn{background:var(--accent);color:var(--panel);border:0;border-radius:7px;padding:9px 14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:none;color:var(--fg);border:1px solid var(--line);font-weight:500}
+.note{font-size:13px;color:var(--muted);max-width:60ch}
+
+.explain{padding:14px 16px 16px;display:grid;gap:10px;font-size:14px}
+.explain p{margin:0;max-width:72ch}
+details{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-top:18px}
+summary{cursor:pointer;padding:12px 16px;font-weight:500}
+details .inner{padding:0 16px 16px;display:grid;gap:10px}
+textarea{width:100%;min-height:120px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;font-family:var(--mono);font-size:12px}
+footer{margin-top:22px;font-size:13px;color:var(--muted)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+<style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="toprow">
+      <div class="eyebrow" data-i18n="eyebrow"></div>
+      <div class="langs" role="group" aria-label="Language">
+        <button type="button" data-lang="tr">TR</button><button type="button" data-lang="en">EN</button><button type="button" data-lang="de">DE</button><button type="button" data-lang="fr">FR</button>
+      </div>
+    </div>
+    <h1 data-i18n="h1"></h1>
+    <p class="lede" data-i18n="lede"></p>
+  </header>
+
+  <section class="controls">
+    <div class="field"><label for="preset" data-i18n="lblPreset"></label><select id="preset"></select></div>
+    <div class="field"><label for="lat" data-i18n="lblLat"></label><input id="lat" type="number" step="0.01" min="-90" max="90"></div>
+    <div class="field"><label for="lon" data-i18n="lblLon"></label><input id="lon" type="number" step="0.01" min="-180" max="180"></div>
+    <div class="field">
+      <label for="minEl" data-i18n="lblMinEl"></label>
+      <select id="minEl"><option value="10">10°</option><option value="30" selected>30°</option><option value="60">60°</option></select>
+    </div>
+    <div class="field">
+      <span class="lbl" id="freqLbl" data-i18n="lblFreq"></span>
+      <div class="seg" role="group" aria-labelledby="freqLbl">
+        <button type="button" id="fSput" aria-pressed="true" data-i18n="fSput"></button>
+        <button type="button" id="fX" aria-pressed="false" data-i18n="fX"></button>
+      </div>
+    </div>
+    <div class="src"><span data-i18n="lblData"></span><span class="chip" id="srcChip"></span></div>
+  </section>
+
+  <div class="main">
+    <section class="panel">
+      <h2><span data-i18n="next5"></span> <small id="passCount"></small></h2>
+      <ul class="passes" id="passList"></ul>
+    </section>
+
+    <div class="detail">
+      <section class="panel">
+        <h2><span id="selTitle"></span> <small id="selWhen"></small></h2>
+        <div class="stats">
+          <div class="stat"><span data-i18n="stEl"></span><b id="sEl">–</b></div>
+          <div class="stat"><span data-i18n="stD"></span><b id="sD">–</b></div>
+          <div class="stat"><span data-i18n="stDf"></span><b id="sDf">–</b></div>
+          <div class="stat"><span data-i18n="stDur"></span><b id="sDur">–</b></div>
+        </div>
+
+        <div class="fly">
+          <div class="flyhead">
+            <p class="cap" data-i18n="capFly"></p>
+            <div class="legend">
+              <span><i style="background:var(--approach)"></i><span data-i18n="approaching"></span></span>
+              <span><i style="background:var(--recede)"></i><span data-i18n="receding"></span></span>
+            </div>
+          </div>
+          <div class="state" id="flyState" aria-live="polite"></div>
+          <canvas id="flyCanvas" role="img"></canvas>
+          <p class="note-sm" data-i18n="wavesNote"></p>
+          <div class="scrub">
+            <input type="range" id="scrub" min="0" max="100" value="20">
+            <output id="scrubOut" for="scrub"></output>
+          </div>
+        </div>
+
+        <div class="viz">
+          <div>
+            <p class="cap" data-i18n="capSky"></p>
+            <svg id="sky" viewBox="0 0 300 300" role="img"></svg>
+          </div>
+          <div id="chartBox">
+            <p class="cap" id="chartCap"></p>
+            <svg id="chart" role="img"></svg>
+            <div class="tip" id="tip" hidden></div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="play" type="button"></button>
+          <span class="note" data-i18n="playNote"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 data-i18n="readH"></h2>
+        <div class="explain">
+          <p data-i18n="read1"></p>
+          <p data-i18n="read2"></p>
+          <p data-i18n="read3"></p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <details>
+    <summary data-i18n="tleSum"></summary>
+    <div class="inner">
+      <p class="note" data-i18n="tleNote"></p>
+      <textarea id="tleIn" spellcheck="false" placeholder="SENTINEL-2A&#10;1 40697U 15028A   ...&#10;2 40697  98.5...."></textarea>
+      <div><button class="btn ghost" id="tleLoad" type="button" data-i18n="tleLoad"></button> <span class="note" id="tleMsg"></span></div>
+    </div>
+  </details>
+
+  <footer data-i18n="footer"></footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
+<script>
+(() => {
+const I18N = {
+tr: {
+  locale: "tr-TR",
+  eyebrow: "Code Beyond the Earth · World Space Week 2026",
+  h1: "Tepemdeki Sentinel",
+  lede: "1957'de Sputnik'in bip sesinin perdesi uydu yaklaşırken yükseliyor, uzaklaşırken düşüyordu. Bu Doppler kaymasından yörünge hesaplandı. Burada aynı fizikle <b>bu hafta tependen geçecek Sentinel-2 ve Sentinel-3</b> uydularını buluyoruz: <span class=\"formula\">Δf ≈ −f₀ · v<sub>r</sub> / c</span>",
+  lblPreset: "Konum", lblLat: "Enlem (°)", lblLon: "Boylam (°)", lblMinEl: "En düşük tepe açısı", lblFreq: "Frekans",
+  fSput: "20 MHz · Sputnik", fX: "8.1 GHz · X-band", lblData: "Veri",
+  srcRepo: "CelesTrak TLE · {date}", srcRepoTitle: "Her gün GitHub Actions ile CelesTrak'tan güncellenen Sentinel TLE verisi. Son güncelleme: {date}.", srcStaleTitle: "TLE verisi {days} gündür güncellenmedi; geçiş saatleri birkaç dakika kayabilir.",
+  srcLoading: "yükleniyor…", srcLive: "Canlı TLE · CelesTrak", srcDemo: "Demo yörüngeler",
+  srcDemoTitle: "CelesTrak'a erişilemedi. Sentinel'e benzeyen sentetik yörüngeler kullanılıyor; geçiş saatleri gerçek değil. Gerçek TLE'leri aşağıya yapıştırabilirsin.",
+  srcPasted: "Yapıştırılan TLE · {n} uydu", libFail: "Kütüphane yüklenemedi", custom: "Özel koordinat",
+  next5: "Önümüzdeki 5 gün", passes: "{n} geçiş", noPass: "Bu tepe açısının üzerinde geçiş yok. Eşiği 10°'ye indirmeyi dene.",
+  pass: "Geçiş", stEl: "Tepe yükselme", stD: "En yakın mesafe", stDf: "En büyük kayma", stDur: "Süre", unitMin: "dk",
+  capFly: "Geçiş diyagramı: uydu, sen ve aradaki görüş çizgisi",
+  approaching: "yaklaşıyor (Δf > 0)", receding: "uzaklaşıyor (Δf < 0)",
+  flyApproach: "<b>Yaklaşıyor.</b> Hızın sana doğru bileşeni v<sub>r</sub> = {v} km/s. Dalga cepheleri önde sıkışıyor, frekans yükseliyor: {df}.",
+  flyRecede: "<b>Uzaklaşıyor.</b> v<sub>r</sub> = +{v} km/s. Dalga cepheleri seyreliyor, frekans düşüyor: {df}.",
+  flyTca: "<b>En yakın an.</b> Hız görüş çizgisine dik, v<sub>r</sub> ≈ 0. Kayma yok.",
+  you: "sen", rise: "doğuş", v: "v",
+  wavesNote: "Dalga hızı gösterim için yavaşlatıldı. Gerçekte radyo dalgaları uydudan yaklaşık 40.000 kat hızlıdır. Diyagram düz-çizgi yaklaşımıdır, mesafeler gerçek.",
+  scrubAria: "Geçiş içindeki zaman",
+  capSky: "Gökyüzü: merkez tam tepe, kenar ufuk",
+  capChart20: "Doppler kayması · 20.005 MHz (Sputnik)", capChartX: "Doppler kayması · 8.1 GHz (X-band veri indirme)",
+  axisMin: "en yakın andan dakika", tipEl: "yükselme", tipDist: "mesafe",
+  compass: ["K", "D", "G", "B"],
+  play: "▶ Dinle", stop: "■ Durdur",
+  playNote: "Geçiş 20 saniyeye sıkıştırılır. Ses, Sputnik'in 20 MHz'indeki kaymayı 800 Hz'lik bir tona ekler; 1957'deki radyo dinleyicileri de böyle duyuyordu.",
+  readH: "Eğriyi okumak",
+  read1: "<b>Sıfır geçişi</b> uydunun sana en yakın olduğu an. O anda uydu ne yaklaşıyor ne uzaklaşıyor, hızı görüş doğrultusuna dik.",
+  read2: "<b>Uçlardaki düzlükler</b> uydunun hızını verir. Ufka yakınken uydu neredeyse doğrudan sana doğru ya da senden uzağa gidiyor, kayma ±f₀·v/c'ye yaklaşıyor.",
+  read3: "<b>Ortadaki eğim</b> en yakın mesafeyi verir: eğim ≈ −f₀·v²/(c·d). Tam tepeden geçen uydu dik bir eğri çizer, uzaktan geçen yayvan. 1957'de Guier ve Weiffenbach yörüngeyi bu eğimden çıkardı. Tepe açısı farklı iki geçişi karşılaştırıp dene.",
+  tleSum: "Kendi TLE verini yapıştır",
+  tleNote: "CelesTrak'ın <span class=\"formula\">GROUP=resource</span> listesinden ya da başka bir kaynaktan üç satırlık TLE bloklarını (isim + 2 satır) buraya yapıştır. Herhangi bir uydu olabilir.",
+  tleLoad: "TLE'leri yükle", tleBad: "Geçerli TLE bulunamadı. Her uydu için bir isim satırı ve 1 ile 2 ile başlayan iki satır gerekli.", tleOk: "{n} uydu yüklendi.",
+  footer: "Yörüngeler SGP4 ile tarayıcında hesaplanır (satellite.js). Türetmeler ve ters problem için: Code Beyond the Earth, \"Sputnik'in bip sesinden Sentinel'e\"."
+},
+en: {
+  locale: "en-GB",
+  eyebrow: "Code Beyond the Earth · World Space Week 2026",
+  h1: "Sentinel Overhead",
+  lede: "In 1957 the pitch of Sputnik's beep rose as it approached and fell as it moved away. That Doppler shift was enough to work out its orbit. With the same physics, this page finds <b>the Sentinel-2 and Sentinel-3 satellites passing over you this week</b>: <span class=\"formula\">Δf ≈ −f₀ · v<sub>r</sub> / c</span>",
+  lblPreset: "Location", lblLat: "Latitude (°)", lblLon: "Longitude (°)", lblMinEl: "Minimum peak elevation", lblFreq: "Frequency",
+  fSput: "20 MHz · Sputnik", fX: "8.1 GHz · X-band", lblData: "Data",
+  srcRepo: "CelesTrak TLE · {date}", srcRepoTitle: "Sentinel TLEs refreshed daily from CelesTrak by GitHub Actions. Last update: {date}.", srcStaleTitle: "TLE data has not been refreshed for {days} days; pass times may be off by a few minutes.",
+  srcLoading: "loading…", srcLive: "Live TLE · CelesTrak", srcDemo: "Demo orbits",
+  srcDemoTitle: "CelesTrak could not be reached. Synthetic Sentinel-like orbits are shown, so pass times are not real. You can paste real TLEs below.",
+  srcPasted: "Pasted TLE · {n} satellites", libFail: "Library failed to load", custom: "Custom coordinates",
+  next5: "Next 5 days", passes: "{n} passes", noPass: "No passes above this elevation. Try lowering the threshold to 10°.",
+  pass: "Pass", stEl: "Peak elevation", stD: "Closest distance", stDf: "Largest shift", stDur: "Duration", unitMin: "min",
+  capFly: "Pass diagram: the satellite, you, and the line of sight between you",
+  approaching: "approaching (Δf > 0)", receding: "receding (Δf < 0)",
+  flyApproach: "<b>Approaching.</b> The part of its velocity pointing at you is v<sub>r</sub> = {v} km/s. Wavefronts bunch up ahead and the frequency rises: {df}.",
+  flyRecede: "<b>Receding.</b> v<sub>r</sub> = +{v} km/s. Wavefronts spread out and the frequency drops: {df}.",
+  flyTca: "<b>Closest approach.</b> Velocity is perpendicular to the line of sight, v<sub>r</sub> ≈ 0. No shift.",
+  you: "you", rise: "rise", v: "v",
+  wavesNote: "Wave speed is slowed down for illustration. Real radio waves travel about 40,000 times faster than the satellite. The diagram uses a straight-line approximation with real distances.",
+  scrubAria: "Time within the pass",
+  capSky: "Sky view: centre is straight overhead, edge is the horizon",
+  capChart20: "Doppler shift · 20.005 MHz (Sputnik)", capChartX: "Doppler shift · 8.1 GHz (X-band downlink)",
+  axisMin: "minutes from closest approach", tipEl: "elevation", tipDist: "distance",
+  compass: ["N", "E", "S", "W"],
+  play: "▶ Listen", stop: "■ Stop",
+  playNote: "The pass is compressed to 20 seconds. The sound adds the 20 MHz shift Sputnik would have had to an 800 Hz tone, which is how radio listeners heard it in 1957.",
+  readH: "Reading the curve",
+  read1: "<b>The zero crossing</b> is the moment the satellite is closest to you. It is neither approaching nor receding; its velocity is perpendicular to your line of sight.",
+  read2: "<b>The flat ends</b> give the satellite's speed. Near the horizon it moves almost straight towards or away from you, so the shift approaches ±f₀·v/c.",
+  read3: "<b>The slope in the middle</b> gives the closest distance: slope ≈ −f₀·v²/(c·d). A pass straight overhead draws a steep curve, a distant one a gentle curve. In 1957 Guier and Weiffenbach recovered the orbit from this slope. Compare two passes with different peak elevations.",
+  tleSum: "Paste your own TLE data",
+  tleNote: "Paste three-line TLE blocks (name + 2 lines) from CelesTrak's <span class=\"formula\">GROUP=resource</span> list or any other source. Any satellite works.",
+  tleLoad: "Load TLEs", tleBad: "No valid TLE found. Each satellite needs a name line and two lines starting with 1 and 2.", tleOk: "{n} satellites loaded.",
+  footer: "Orbits are computed in your browser with SGP4 (satellite.js). For the derivations and the inverse problem: Code Beyond the Earth, \"From Sputnik's beep to Sentinel\"."
+},
+de: {
+  locale: "de-DE",
+  eyebrow: "Code Beyond the Earth · World Space Week 2026",
+  h1: "Sentinel über mir",
+  lede: "1957 stieg die Tonhöhe von Sputniks Piepton, wenn er sich näherte, und sank, wenn er sich entfernte. Aus dieser Doppler-Verschiebung ließ sich seine Bahn berechnen. Mit derselben Physik findet diese Seite <b>die Sentinel-2- und Sentinel-3-Satelliten, die diese Woche über dich hinwegziehen</b>: <span class=\"formula\">Δf ≈ −f₀ · v<sub>r</sub> / c</span>",
+  lblPreset: "Ort", lblLat: "Breite (°)", lblLon: "Länge (°)", lblMinEl: "Mindest-Höchstelevation", lblFreq: "Frequenz",
+  fSput: "20 MHz · Sputnik", fX: "8,1 GHz · X-Band", lblData: "Daten",
+  srcRepo: "CelesTrak-TLE · {date}", srcRepoTitle: "Sentinel-TLEs, täglich per GitHub Actions von CelesTrak aktualisiert. Letzte Aktualisierung: {date}.", srcStaleTitle: "Die TLE-Daten sind seit {days} Tagen nicht aktualisiert; Überflugzeiten können um einige Minuten abweichen.",
+  srcLoading: "lädt…", srcLive: "Live-TLE · CelesTrak", srcDemo: "Demo-Bahnen",
+  srcDemoTitle: "CelesTrak war nicht erreichbar. Gezeigt werden synthetische, Sentinel-ähnliche Bahnen; die Überflugzeiten sind nicht echt. Echte TLEs kannst du unten einfügen.",
+  srcPasted: "Eingefügte TLE · {n} Satelliten", libFail: "Bibliothek konnte nicht geladen werden", custom: "Eigene Koordinaten",
+  next5: "Nächste 5 Tage", passes: "{n} Überflüge", noPass: "Keine Überflüge oberhalb dieser Elevation. Senke die Schwelle auf 10°.",
+  pass: "Überflug", stEl: "Höchste Elevation", stD: "Kleinster Abstand", stDf: "Größte Verschiebung", stDur: "Dauer", unitMin: "Min.",
+  capFly: "Überflug-Diagramm: Satellit, du und die Sichtlinie dazwischen",
+  approaching: "nähert sich (Δf > 0)", receding: "entfernt sich (Δf < 0)",
+  flyApproach: "<b>Nähert sich.</b> Der auf dich gerichtete Anteil der Geschwindigkeit ist v<sub>r</sub> = {v} km/s. Die Wellenfronten drängen sich vorne zusammen, die Frequenz steigt: {df}.",
+  flyRecede: "<b>Entfernt sich.</b> v<sub>r</sub> = +{v} km/s. Die Wellenfronten ziehen sich auseinander, die Frequenz sinkt: {df}.",
+  flyTca: "<b>Größte Annäherung.</b> Die Geschwindigkeit steht senkrecht zur Sichtlinie, v<sub>r</sub> ≈ 0. Keine Verschiebung.",
+  you: "du", rise: "Aufgang", v: "v",
+  wavesNote: "Die Wellengeschwindigkeit ist zur Veranschaulichung verlangsamt. Echte Radiowellen sind etwa 40.000-mal schneller als der Satellit. Das Diagramm nutzt eine Geradennäherung mit echten Abständen.",
+  scrubAria: "Zeit innerhalb des Überflugs",
+  capSky: "Himmelsansicht: Mitte ist der Zenit, Rand der Horizont",
+  capChart20: "Doppler-Verschiebung · 20,005 MHz (Sputnik)", capChartX: "Doppler-Verschiebung · 8,1 GHz (X-Band-Downlink)",
+  axisMin: "Minuten ab größter Annäherung", tipEl: "Elevation", tipDist: "Abstand",
+  compass: ["N", "O", "S", "W"],
+  play: "▶ Anhören", stop: "■ Stopp",
+  playNote: "Der Überflug wird auf 20 Sekunden gestaucht. Der Ton addiert Sputniks Verschiebung bei 20 MHz zu einem 800-Hz-Ton, so wie Funkhörer ihn 1957 hörten.",
+  readH: "Die Kurve lesen",
+  read1: "<b>Der Nulldurchgang</b> ist der Moment, in dem der Satellit dir am nächsten ist. Er nähert sich weder noch entfernt er sich; seine Geschwindigkeit steht senkrecht zur Sichtlinie.",
+  read2: "<b>Die flachen Enden</b> verraten die Geschwindigkeit. Nahe am Horizont bewegt er sich fast direkt auf dich zu oder von dir weg, die Verschiebung nähert sich ±f₀·v/c.",
+  read3: "<b>Die Steigung in der Mitte</b> verrät den kleinsten Abstand: Steigung ≈ −f₀·v²/(c·d). Ein Überflug direkt über dir ergibt eine steile Kurve, ein entfernter eine flache. 1957 bestimmten Guier und Weiffenbach die Bahn aus dieser Steigung. Vergleiche zwei Überflüge mit unterschiedlicher Elevation.",
+  tleSum: "Eigene TLE-Daten einfügen",
+  tleNote: "Füge dreizeilige TLE-Blöcke (Name + 2 Zeilen) aus CelesTraks Liste <span class=\"formula\">GROUP=resource</span> oder einer anderen Quelle ein. Jeder Satellit funktioniert.",
+  tleLoad: "TLEs laden", tleBad: "Keine gültige TLE gefunden. Jeder Satellit braucht eine Namenszeile und zwei Zeilen, die mit 1 und 2 beginnen.", tleOk: "{n} Satelliten geladen.",
+  footer: "Die Bahnen werden in deinem Browser mit SGP4 berechnet (satellite.js). Herleitungen und das inverse Problem: Code Beyond the Earth, „Vom Piepton des Sputnik zu Sentinel“."
+},
+fr: {
+  locale: "fr-FR",
+  eyebrow: "Code Beyond the Earth · World Space Week 2026",
+  h1: "Sentinel au-dessus de moi",
+  lede: "En 1957, le bip de Spoutnik devenait plus aigu quand il s'approchait et plus grave quand il s'éloignait. Ce décalage Doppler a suffi pour calculer son orbite. Avec la même physique, cette page trouve <b>les satellites Sentinel-2 et Sentinel-3 qui passent au-dessus de vous cette semaine</b> : <span class=\"formula\">Δf ≈ −f₀ · v<sub>r</sub> / c</span>",
+  lblPreset: "Lieu", lblLat: "Latitude (°)", lblLon: "Longitude (°)", lblMinEl: "Élévation maximale minimum", lblFreq: "Fréquence",
+  fSput: "20 MHz · Spoutnik", fX: "8,1 GHz · bande X", lblData: "Données",
+  srcRepo: "TLE CelesTrak · {date}", srcRepoTitle: "TLE Sentinel mis à jour chaque jour depuis CelesTrak par GitHub Actions. Dernière mise à jour : {date}.", srcStaleTitle: "Les TLE n'ont pas été mis à jour depuis {days} jours ; les heures de passage peuvent décaler de quelques minutes.",
+  srcLoading: "chargement…", srcLive: "TLE en direct · CelesTrak", srcDemo: "Orbites de démo",
+  srcDemoTitle: "CelesTrak est inaccessible. Des orbites synthétiques proches de celles des Sentinel sont affichées ; les heures de passage ne sont pas réelles. Vous pouvez coller de vrais TLE ci-dessous.",
+  srcPasted: "TLE collés · {n} satellites", libFail: "La bibliothèque n'a pas pu se charger", custom: "Coordonnées personnalisées",
+  next5: "5 prochains jours", passes: "{n} passages", noPass: "Aucun passage au-dessus de cette élévation. Essayez d'abaisser le seuil à 10°.",
+  pass: "Passage", stEl: "Élévation max.", stD: "Distance minimale", stDf: "Décalage max.", stDur: "Durée", unitMin: "min",
+  capFly: "Schéma du passage : le satellite, vous, et la ligne de visée entre les deux",
+  approaching: "s'approche (Δf > 0)", receding: "s'éloigne (Δf < 0)",
+  flyApproach: "<b>Il s'approche.</b> La composante de sa vitesse dirigée vers vous vaut v<sub>r</sub> = {v} km/s. Les fronts d'onde se resserrent devant lui et la fréquence monte : {df}.",
+  flyRecede: "<b>Il s'éloigne.</b> v<sub>r</sub> = +{v} km/s. Les fronts d'onde s'espacent et la fréquence baisse : {df}.",
+  flyTca: "<b>Point le plus proche.</b> La vitesse est perpendiculaire à la ligne de visée, v<sub>r</sub> ≈ 0. Aucun décalage.",
+  you: "vous", rise: "lever", v: "v",
+  wavesNote: "La vitesse des ondes est ralentie pour l'illustration. Les vraies ondes radio vont environ 40 000 fois plus vite que le satellite. Le schéma utilise une approximation rectiligne avec les vraies distances.",
+  scrubAria: "Instant dans le passage",
+  capSky: "Vue du ciel : le centre est le zénith, le bord l'horizon",
+  capChart20: "Décalage Doppler · 20,005 MHz (Spoutnik)", capChartX: "Décalage Doppler · 8,1 GHz (liaison descendante bande X)",
+  axisMin: "minutes depuis le point le plus proche", tipEl: "élévation", tipDist: "distance",
+  compass: ["N", "E", "S", "O"],
+  play: "▶ Écouter", stop: "■ Arrêter",
+  playNote: "Le passage est compressé en 20 secondes. Le son ajoute le décalage de Spoutnik à 20 MHz à une tonalité de 800 Hz, comme l'entendaient les radioamateurs en 1957.",
+  readH: "Lire la courbe",
+  read1: "<b>Le passage par zéro</b> est l'instant où le satellite est le plus proche de vous. Il ne s'approche ni ne s'éloigne ; sa vitesse est perpendiculaire à la ligne de visée.",
+  read2: "<b>Les paliers aux extrémités</b> donnent la vitesse. Près de l'horizon, il se dirige presque droit vers vous ou s'éloigne de vous, et le décalage tend vers ±f₀·v/c.",
+  read3: "<b>La pente au centre</b> donne la distance minimale : pente ≈ −f₀·v²/(c·d). Un passage au zénith trace une courbe raide, un passage lointain une courbe douce. En 1957, Guier et Weiffenbach ont retrouvé l'orbite grâce à cette pente. Comparez deux passages d'élévations différentes.",
+  tleSum: "Coller vos propres données TLE",
+  tleNote: "Collez des blocs TLE de trois lignes (nom + 2 lignes) depuis la liste <span class=\"formula\">GROUP=resource</span> de CelesTrak ou une autre source. N'importe quel satellite convient.",
+  tleLoad: "Charger les TLE", tleBad: "Aucun TLE valide trouvé. Chaque satellite nécessite une ligne de nom et deux lignes commençant par 1 et 2.", tleOk: "{n} satellites chargés.",
+  footer: "Les orbites sont calculées dans votre navigateur avec SGP4 (satellite.js). Pour les démonstrations et le problème inverse : Code Beyond the Earth, « Du bip de Spoutnik à Sentinel »."
+}
+};
+
+const S = window.satellite;
+const C = 299792458;
+const F = { sput: 20.005e6, x: 8.1e9 };
+const DEG = Math.PI / 180;
+const PRESETS = [
+  ["Kartal, İstanbul", 40.89, 29.19], ["Ankara", 39.93, 32.86], ["İzmir", 38.42, 27.14],
+  ["Antalya", 36.90, 30.70], ["Reading, UK", 51.45, -0.97], ["Paris", 48.86, 2.35],
+  ["Berlin", 52.52, 13.40], ["Montréal", 45.50, -73.57], ["Reykjavík", 64.15, -21.94],
+];
+
+// Demo: Sentinel yörüngelerine benzeyen sentetik TLE'ler (güneşle eşzamanlı; geçiş saatleri gerçek değil)
+const DEMO_TLE = `SENTINEL-2A
+1 90001U          26278.50000000  .00000000  00000-0  00000+0 0    02
+2 90001  98.5700 350.0000 0001100  90.0000   0.0000 14.31716198    01
+SENTINEL-2B
+1 90002U          26278.50000000  .00000000  00000-0  00000+0 0    03
+2 90002  98.5700 350.0000 0001100  90.0000 180.0000 14.31716198    01
+SENTINEL-2C
+1 90003U          26278.50000000  .00000000  00000-0  00000+0 0    04
+2 90003  98.5700 350.0000 0001100  90.0000  90.0000 14.31716198    02
+SENTINEL-3A
+1 90004U          26278.50000000  .00000000  00000-0  00000+0 0    05
+2 90004  98.6500 342.5000 0001100  90.0000  40.0000 14.23215116    08
+SENTINEL-3B
+1 90005U          26278.50000000  .00000000  00000-0  00000+0 0    06
+2 90005  98.6500 342.5000 0001100  90.0000 180.0000 14.23215116    04`;
+
+const $ = id => document.getElementById(id);
+const st = { lat: 40.89, lon: 29.19, minEl: 30, freq: "sput", sats: [], passes: [], sel: null, track: null, cur: 0, hovering: false, playing: false, src: "loading", srcN: 0, updated: null };
+
+// ---------- i18n ----------
+let lang = "en";
+function t(k, vars) {
+  let s = (I18N[lang] && I18N[lang][k] !== undefined) ? I18N[lang][k] : I18N.en[k];
+  if (vars && typeof s === "string") s = s.replace(/\{(\w+)\}/g, (_, v) => vars[v]);
+  return s;
+}
+function pickLang() {
+  try { const s = localStorage.getItem("tepemdeki-lang"); if (s && I18N[s]) return s; } catch {}
+  const n = (navigator.language || "en").slice(0, 2).toLowerCase();
+  return I18N[n] ? n : "en";
+}
+function setLang(l) {
+  lang = l;
+  try { localStorage.setItem("tepemdeki-lang", l); } catch {}
+  document.documentElement.lang = l;
+  document.querySelectorAll("[data-i18n]").forEach(e => { e.innerHTML = t(e.dataset.i18n); });
+  document.querySelectorAll(".langs button").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === l));
+  $("scrub").setAttribute("aria-label", t("scrubAria"));
+  const custom = $("preset").querySelector('option[value="c"]'); if (custom) custom.textContent = t("custom");
+  renderSource(); renderList(); renderDetail();
+}
+
+// ---------- TLE / yörünge ----------
+function parseTLE(text, filter) {
+  const lines = text.split(/\r?\n/).map(l => l.trimEnd()).filter(l => l.trim());
+  const out = [];
+  for (let i = 0; i < lines.length; ) {
+    if (lines[i].startsWith("1 ") && lines[i+1] && lines[i+1].startsWith("2 ")) {
+      out.push({ name: "NORAD " + lines[i].slice(2, 7).trim(), l1: lines[i], l2: lines[i+1] }); i += 2; continue;
+    }
+    if (lines[i+1] && lines[i+1].startsWith("1 ") && lines[i+2] && lines[i+2].startsWith("2 ")) {
+      out.push({ name: lines[i].replace(/^0 /, "").trim(), l1: lines[i+1], l2: lines[i+2] }); i += 3; continue;
+    }
+    i++;
+  }
+  return out.filter(x => !filter || filter(x.name))
+    .map(x => { try { const satrec = S.twoline2satrec(x.l1, x.l2); return satrec.error ? null : { name: x.name, satrec }; } catch { return null; } })
+    .filter(Boolean);
+}
+const isSentinel = n => /^SENTINEL-(2|3)/.test(n.toUpperCase());
+const observer = () => ({ latitude: st.lat * DEG, longitude: st.lon * DEG, height: 0.03 });
+
+function look(sat, date, obs) {
+  const pv = S.propagate(sat.satrec, date);
+  if (!pv || !pv.position) return null;
+  const la = S.ecfToLookAngles(obs, S.eciToEcf(pv.position, S.gstime(date)));
+  return { el: la.elevation / DEG, az: la.azimuth / DEG, range: la.rangeSat };
+}
+
+function findPasses() {
+  const obs = observer(), t0 = Date.now(), t1 = t0 + 5 * 86400e3, step = 20e3, res = [];
+  for (const sat of st.sats) {
+    let up = false, rise = 0, maxEl = -90, tMax = 0;
+    for (let tt = t0; tt <= t1; tt += step) {
+      const l = look(sat, new Date(tt), obs);
+      if (!l) break;
+      if (l.el > 0) {
+        if (!up) { up = true; rise = tt; maxEl = -90; }
+        if (l.el > maxEl) { maxEl = l.el; tMax = tt; }
+      } else if (up) {
+        up = false;
+        if (maxEl >= st.minEl) res.push({ sat, rise: rise - step, set: tt, tMax, maxEl });
+      }
+    }
+  }
+  return res.sort((a, b) => a.rise - b.rise);
+}
+
+function trackFor(p) {
+  const obs = observer(), pts = [];
+  for (let tt = p.rise; tt <= p.set; tt += 2000) {
+    const a = look(p.sat, new Date(tt), obs), b = look(p.sat, new Date(tt - 500), obs), c = look(p.sat, new Date(tt + 500), obs);
+    if (!a || !b || !c) continue;
+    pts.push({ t: tt, el: a.el, az: a.az, range: a.range, rr: (c.range - b.range) * 1000 }); // m/s
+  }
+  const vis = pts.filter(q => q.el >= 0);
+  let k = 0, best = Infinity;
+  vis.forEach((q, i) => { if (q.range < best) { best = q.range; k = i; } });
+  // düz-çizgi diyagramı için iz boyunca konum (km): x = ±√(ρ² − d²)
+  vis.forEach(q => { q.x = Math.sign(q.t - vis[k].t) * Math.sqrt(Math.max(0, q.range * q.range - best * best)); });
+  const span = vis.length > 1 ? (vis.at(-1).x - vis[0].x) / ((vis.at(-1).t - vis[0].t) / 1000) : 7.4;
+  return { pts: vis, tcaIdx: k, tca: vis[k] ? vis[k].t : p.tMax, dmin: best, vAlong: span, vmax: Math.max(...vis.map(q => Math.abs(q.rr))) };
+}
+
+// ---------- biçimlendirme ----------
+const loc = () => t("locale");
+const fmtWhen = tt => new Date(tt).toLocaleString(loc(), { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const fmtHM = tt => new Date(tt).toLocaleTimeString(loc(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const num = (v, d) => v.toLocaleString(loc(), { minimumFractionDigits: d, maximumFractionDigits: d });
+function fmtDf(hz, signed) {
+  const a = Math.abs(hz), sg = signed && hz > 0 ? "+" : "";
+  if (a >= 1000) return sg + num(hz / 1000, a >= 1e5 ? 0 : 1) + " kHz";
+  return sg + num(hz, 0) + " Hz";
+}
+const dfOf = (q, f0) => -f0 * q.rr / C;
+
+// ---------- liste ----------
+function renderSource() {
+  const c = $("srcChip");
+  const ageDays = st.updated ? (Date.now() - st.updated) / 86400e3 : 0;
+  const stale = st.src === "repo" && ageDays > 3;
+  const date = st.updated ? new Date(st.updated).toLocaleString(loc(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  c.className = "chip " + (stale || st.src === "demo" ? "demo" : ["live", "pasted", "repo"].includes(st.src) ? "live" : "");
+  c.textContent = st.src === "repo" ? t("srcRepo", { date }) : st.src === "live" ? t("srcLive") : st.src === "pasted" ? t("srcPasted", { n: st.srcN }) : st.src === "demo" ? t("srcDemo") : st.src === "fail" ? t("libFail") : t("srcLoading");
+  c.title = stale ? t("srcStaleTitle", { days: Math.floor(ageDays) }) : st.src === "repo" ? t("srcRepoTitle", { date }) : st.src === "demo" ? t("srcDemoTitle") : "";
+}
+
+function renderList() {
+  const ul = $("passList");
+  ul.innerHTML = "";
+  $("passCount").textContent = st.passes.length ? t("passes", { n: st.passes.length }) : "";
+  if (!st.passes.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = t("noPass"); ul.appendChild(li); return; }
+  st.passes.forEach((p, i) => {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-current", p === st.sel ? "true" : "false");
+    b.innerHTML = `<span class="p-time">${fmtWhen(p.tMax)}</span><span class="p-el ${p.maxEl >= 60 ? "hi" : ""}">${p.maxEl.toFixed(0)}°</span><span class="p-sat"></span>`;
+    b.querySelector(".p-sat").textContent = p.sat.name;
+    b.addEventListener("click", () => select(i));
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+
+function select(i) {
+  stopAudio();
+  st.sel = st.passes[i] || null;
+  st.track = st.sel ? trackFor(st.sel) : null;
+  if (st.track) {
+    const n = st.track.pts.length;
+    $("scrub").max = n - 1;
+    st.cur = Math.round(st.track.tcaIdx * 0.45); // yaklaşma evresinde başla
+    $("scrub").value = st.cur;
+  }
+  renderList(); renderDetail();
+}
+
+// ---------- detay ----------
+function renderDetail() {
+  const p = st.sel, tr = st.track;
+  $("selTitle").textContent = p ? p.sat.name : t("pass");
+  if (!p || !tr || !tr.pts.length) {
+    $("selWhen").textContent = "";
+    ["sEl", "sD", "sDf", "sDur"].forEach(id => $(id).textContent = "–");
+    $("sky").innerHTML = ""; $("chart").innerHTML = ""; $("flyState").innerHTML = "";
+    const cv = $("flyCanvas"); cv.getContext("2d").clearRect(0, 0, cv.width, cv.height);
+    $("play").textContent = t("play");
+    return;
+  }
+  const f0 = F[st.freq];
+  $("selWhen").textContent = fmtWhen(tr.tca);
+  $("sEl").textContent = p.maxEl.toFixed(0) + "°";
+  $("sD").textContent = num(tr.dmin, 0) + " km";
+  $("sDf").textContent = "±" + fmtDf(Math.max(...tr.pts.map(q => Math.abs(dfOf(q, f0)))));
+  $("sDur").textContent = num((tr.pts.at(-1).t - tr.pts[0].t) / 60000, 1) + " " + t("unitMin");
+  $("chartCap").textContent = st.freq === "sput" ? t("capChart20") : t("capChartX");
+  $("play").textContent = st.playing ? t("stop") : t("play");
+  drawAll();
+}
+
+function drawAll() { drawFly(); drawSky(); drawChart(); updateScrub(); }
+
+function updateScrub() {
+  const q = st.track && st.track.pts[st.cur];
+  if (!q) return;
+  const dm = (q.t - st.track.tca) / 60000;
+  $("scrubOut").textContent = fmtHM(q.t) + "  ·  " + (dm >= 0 ? "+" : "−") + num(Math.abs(dm), 1) + " " + t("unitMin");
+}
+
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const colorFor = rr => rr < 0 ? css("--approach") : css("--recede");
+
+// iz noktalarını Δf işaretine göre (yaklaşma / uzaklaşma) segmentlere böl
+function signSegments(pts) {
+  const segs = []; let cur = null;
+  pts.forEach((q, i) => {
+    const s = q.rr < 0 ? -1 : 1;
+    if (!cur || cur.s !== s) { if (cur) cur.idx.push(i); cur = { s, idx: [] }; segs.push(cur); if (i > 0) cur.idx.push(i - 1); }
+    cur.idx.push(i);
+  });
+  return segs;
+}
+
+// ---------- geçiş diyagramı (canvas) ----------
+function drawFly() {
+  const cv = $("flyCanvas"), tr = st.track;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth || 600, H = cv.clientHeight || 240;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const pts = tr.pts, q = pts[st.cur];
+  const fg = css("--fg"), muted = css("--muted"), grid = css("--grid"), line = css("--line"), panel = css("--panel");
+  const mono = css("--mono");
+
+  // ölçek: en yakın mesafe dikey, iz boyu yatay, ikisi de aynı km→px oranıyla
+  const padX = 28, padY = 30;
+  const xmaxKm = Math.max(...pts.map(p => Math.abs(p.x)), 1);
+  let s = (H - 2 * padY) / tr.dmin;
+  s = Math.min(s, (W / 2 - padX) / Math.min(xmaxKm, 2.2 * tr.dmin));   // en yakın anın ±2.2d çevresini göster
+  const dpx = tr.dmin * s;
+  const trackY = (H - dpx) / 2, obsY = trackY + dpx;
+  // uydu kenara yaklaşınca görüntü onu takip etsin (gözlemci kadrajdan çıkabilir)
+  const edge = W / 2 - 95;
+  const camKm = Math.abs(pts[st.cur].x * s) > edge ? pts[st.cur].x - Math.sign(pts[st.cur].x) * edge / s : 0;
+  const cx = W / 2 - camKm * s;
+  const X = km => cx + km * s;
+
+  // iz çizgisi
+  g.strokeStyle = line; g.lineWidth = 1; g.setLineDash([4, 5]);
+  g.beginPath(); g.moveTo(X(pts[0].x), trackY); g.lineTo(X(pts.at(-1).x), trackY); g.stroke();
+  // en yakın mesafe ölçüsü
+  g.strokeStyle = grid; g.beginPath(); g.moveTo(cx, trackY); g.lineTo(cx, obsY); g.stroke();
+  g.setLineDash([]);
+  g.font = `11px ${mono}`; g.fillStyle = muted; g.textAlign = "left";
+  g.fillText("d = " + num(tr.dmin, 0) + " km", cx + 6, (trackY + obsY) / 2 + 4);
+
+  // dalga cepheleri: geçmişteki konumlardan yayılan halkalar (dalga hızı = 2.5 × uydu hızı, gösterim için)
+  const vpix = s * Math.abs(tr.vAlong);                 // px / s
+  const cvis = 2.5 * vpix, R0 = Math.max(16, Math.min(W, H) * 0.075);
+  const xAt = tt => {                                  // t anındaki iz konumu (km), doğrusal ara değer
+    if (tt <= pts[0].t) return null;
+    let lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pts[m].t <= tt) lo = m; else hi = m; }
+    const a = pts[lo], b = pts[hi], f = (tt - a.t) / ((b.t - a.t) || 1);
+    return a.x + (b.x - a.x) * f;
+  };
+  const phase = ((q.t / 1000) * cvis / R0) % 1;        // halkalar kaydırıcıyla akıcı hareket etsin
+  for (let j = 1; j <= 8; j++) {
+    const r = (j - phase) * R0;
+    if (r <= 2) continue;
+    const xk = xAt(q.t - (r / cvis) * 1000);
+    if (xk == null) continue;
+    g.globalAlpha = Math.max(0.06, 0.55 - j * 0.06);
+    g.strokeStyle = muted; g.lineWidth = 1.2;
+    g.beginPath(); g.arc(X(xk), trackY, r, 0, Math.PI * 2); g.stroke();
+  }
+  g.globalAlpha = 1;
+
+  // gözlemci
+  g.fillStyle = fg;
+  g.beginPath(); g.moveTo(cx, obsY - 7); g.lineTo(cx - 7, obsY + 6); g.lineTo(cx + 7, obsY + 6); g.closePath(); g.fill();
+  g.textAlign = "center"; g.fillStyle = muted; g.fillText(t("you"), cx, Math.min(H - 4, obsY + 20));
+
+  // görüş çizgisi
+  const sx = X(q.x), sy = trackY;
+  g.strokeStyle = muted; g.lineWidth = 1; g.setLineDash([2, 4]);
+  g.beginPath(); g.moveTo(sx, sy); g.lineTo(cx, obsY - 7); g.stroke(); g.setLineDash([]);
+
+  const arrow = (x0, y0, x1, y1, col, w) => {
+    const a = Math.atan2(y1 - y0, x1 - x0), h = 8;
+    g.strokeStyle = col; g.fillStyle = col; g.lineWidth = w;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1 - Math.cos(a) * h * 0.6, y1 - Math.sin(a) * h * 0.6); g.stroke();
+    g.beginPath(); g.moveTo(x1, y1); g.lineTo(x1 - h * Math.cos(a - 0.45), y1 - h * Math.sin(a - 0.45)); g.lineTo(x1 - h * Math.cos(a + 0.45), y1 - h * Math.sin(a + 0.45)); g.closePath(); g.fill();
+  };
+  // hız vektörü (iz boyunca)
+  const L = Math.max(44, Math.min(70, W * 0.09));
+  const dir = Math.sign(tr.vAlong) || 1;
+  arrow(sx, sy, sx + dir * L, sy, fg, 2);
+  g.fillStyle = fg; g.textAlign = "center"; g.fillText(t("v"), sx + dir * (L + 10), sy + 4);
+  // radyal bileşen (görüş çizgisi boyunca)
+  const ux = cx - sx, uy = (obsY - 7) - sy, un = Math.hypot(ux, uy) || 1;
+  const frac = Math.min(1, Math.abs(q.rr) / (tr.vmax || 1));
+  if (frac > 0.04) {
+    const sgn = q.rr < 0 ? 1 : -1;                     // yaklaşma: sana doğru; uzaklaşma: senden öteye
+    const col = colorFor(q.rr);
+    arrow(sx, sy, sx + sgn * ux / un * L * frac, sy + sgn * uy / un * L * frac, col, 3);
+    g.fillStyle = col; g.textAlign = "left";
+    g.fillText("vᵣ", sx + sgn * ux / un * L * frac + 6, sy + sgn * uy / un * L * frac + (sgn > 0 ? 12 : -4));
+  }
+  // uydu
+  g.fillStyle = panel; g.strokeStyle = fg; g.lineWidth = 1.5;
+  g.fillRect(sx - 14, sy - 3, 8, 6); g.strokeRect(sx - 14, sy - 3, 8, 6);
+  g.fillRect(sx + 6, sy - 3, 8, 6); g.strokeRect(sx + 6, sy - 3, 8, 6);
+  g.fillStyle = fg; g.fillRect(sx - 5, sy - 5, 10, 10);
+
+  // durum metni
+  const f0 = F[st.freq], df = dfOf(q, f0), vr = q.rr / 1000;
+  const near = Math.abs(q.rr) < 0.05 * tr.vmax;
+  const dot = near ? css("--muted") : colorFor(q.rr);
+  const msg = near ? t("flyTca") : q.rr < 0 ? t("flyApproach", { v: num(vr, 2), df: fmtDf(df, true) }) : t("flyRecede", { v: num(vr, 2), df: fmtDf(df, true) });
+  $("flyState").innerHTML = `<i style="background:${dot}"></i><span>${msg}</span>`;
+  cv.setAttribute("aria-label", $("flyState").textContent);
+}
+
+// ---------- gökyüzü (svg) ----------
+function skyXY(az, elv) { const c = 150, R = 128, r = R * (90 - Math.max(0, elv)) / 90; return [c + r * Math.sin(az * DEG), c - r * Math.cos(az * DEG)]; }
+
+function drawSky() {
+  const svg = $("sky"); svg.innerHTML = "";
+  const line = css("--line"), grid = css("--grid"), panel = css("--panel"), fg = css("--fg");
+  [[0, line], [30, grid], [60, grid]].forEach(([e, s]) => el("circle", { cx: 150, cy: 150, r: 128 * (90 - e) / 90, fill: "none", stroke: s }, svg));
+  el("line", { x1: 150, y1: 22, x2: 150, y2: 278, stroke: grid }, svg);
+  el("line", { x1: 22, y1: 150, x2: 278, y2: 150, stroke: grid }, svg);
+  const cp = t("compass");
+  [[cp[0], 150, 14], [cp[1], 290, 154], [cp[2], 150, 296], [cp[3], 10, 154]].forEach(([s, x, y]) => { el("text", { x, y, "text-anchor": "middle" }, svg).textContent = s; });
+  [[30, "30°"], [60, "60°"]].forEach(([e, s]) => { el("text", { x: 153, y: 150 - 128 * (90 - e) / 90 - 3 }, svg).textContent = s; });
+
+  const pts = st.track.pts;
+  signSegments(pts).forEach(seg => {
+    const d = seg.idx.map((i, k) => (k ? "L" : "M") + skyXY(pts[i].az, pts[i].el).map(v => v.toFixed(1)).join(",")).join("");
+    el("path", { d, fill: "none", stroke: seg.s < 0 ? css("--approach") : css("--recede"), "stroke-width": 2.5, "stroke-linecap": "round" }, svg);
+  });
+  const [sx, sy] = skyXY(pts[0].az, pts[0].el);
+  el("circle", { cx: sx, cy: sy, r: 4, fill: css("--approach"), stroke: panel, "stroke-width": 2 }, svg);
+  el("text", { x: sx + 7, y: sy - 6 }, svg).textContent = t("rise");
+  const a = pts.at(-2) || pts[0], b = pts.at(-1);
+  const [ax, ay] = skyXY(a.az, a.el), [bx, by] = skyXY(b.az, b.el), ang = Math.atan2(by - ay, bx - ax), h = 9;
+  el("path", { d: `M${bx},${by} L${bx - h * Math.cos(ang - 0.45)},${by - h * Math.sin(ang - 0.45)} L${bx - h * Math.cos(ang + 0.45)},${by - h * Math.sin(ang + 0.45)} Z`, fill: css("--recede") }, svg);
+  const q = pts[st.cur];
+  if (q) { const [mx, my] = skyXY(q.az, q.el); el("circle", { cx: mx, cy: my, r: 6.5, fill: fg, stroke: panel, "stroke-width": 2.5 }, svg); }
+}
+
+// ---------- Doppler eğrisi (svg) ----------
+let chartGeom = null;
+function niceStep(range, n) { const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p; return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p; }
+
+function drawChart() {
+  const svg = $("chart"), W = svg.clientWidth || 600, H = 270;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+  const f0 = F[st.freq], kilo = st.freq === "x";
+  const pts = st.track.pts, tca = st.track.tca;
+  const xs = pts.map(q => (q.t - tca) / 60000), ys = pts.map(q => dfOf(q, f0) / (kilo ? 1000 : 1));
+  const m = { l: 56, r: 12, t: 10, b: 42 };
+  const xmin = Math.min(...xs), xmax = Math.max(...xs), yAbs = Math.max(...ys.map(Math.abs)) * 1.08;
+  const X = v => m.l + (v - xmin) / (xmax - xmin) * (W - m.l - m.r);
+  const Y = v => m.t + (yAbs - v) / (2 * yAbs) * (H - m.t - m.b);
+  const grid = css("--grid"), line = css("--line"), panel = css("--panel"), fg = css("--fg");
+
+  const ystep = niceStep(2 * yAbs, 4);
+  for (let v = Math.ceil(-yAbs / ystep) * ystep; v <= yAbs; v += ystep) {
+    const zero = Math.abs(v) < 1e-9;
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: zero ? line : grid }, svg);
+    el("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }, svg).textContent = zero ? "0" : (v > 0 ? "+" : "") + num(+v.toFixed(2), Math.abs(v) < 1 ? 1 : 0);
+  }
+  const yMid = m.t + (H - m.t - m.b) / 2;
+  el("text", { x: 12, y: yMid, transform: `rotate(-90 12 ${yMid})`, "text-anchor": "middle" }, svg).textContent = kilo ? "Δf (kHz)" : "Δf (Hz)";
+  const xstep = niceStep(xmax - xmin, 6);
+  for (let v = Math.ceil(xmin / xstep) * xstep; v <= xmax + 1e-9; v += xstep) {
+    el("line", { x1: X(v), x2: X(v), y1: H - m.b, y2: H - m.b + 4, stroke: line }, svg);
+    el("text", { x: X(v), y: H - m.b + 16, "text-anchor": "middle" }, svg).textContent = (v > 0 ? "+" : "") + num(+v.toFixed(1), 0);
+  }
+  el("text", { x: W - m.r, y: H - 4, "text-anchor": "end" }, svg).textContent = t("axisMin");
+  el("line", { x1: X(0), x2: X(0), y1: m.t, y2: H - m.b, stroke: line, "stroke-dasharray": "3 4" }, svg);
+
+  signSegments(pts).forEach(seg => {
+    const d = seg.idx.map((i, k) => (k ? "L" : "M") + X(xs[i]).toFixed(1) + "," + Y(ys[i]).toFixed(1)).join("");
+    el("path", { d, fill: "none", stroke: seg.s < 0 ? css("--approach") : css("--recede"), "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  });
+
+  const i = st.cur;
+  if (pts[i]) {
+    el("line", { x1: X(xs[i]), x2: X(xs[i]), y1: m.t, y2: H - m.b, stroke: fg, "stroke-width": 1, "stroke-opacity": 0.45 }, svg);
+    el("circle", { cx: X(xs[i]), cy: Y(ys[i]), r: 5.5, fill: fg, stroke: panel, "stroke-width": 2.5 }, svg);
+  }
+  el("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H, fill: "transparent" }, svg);
+  chartGeom = { X, xs };
+}
+
+function onHover(ev) {
+  if (!chartGeom || st.playing) return;
+  const svg = $("chart"), r = svg.getBoundingClientRect();
+  const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+  const { X, xs } = chartGeom;
+  let best = 0, bd = Infinity;
+  xs.forEach((x, i) => { const d = Math.abs(X(x) - px); if (d < bd) { bd = d; best = i; } });
+  st.cur = best; $("scrub").value = best;
+  drawAll();
+  const q = st.track.pts[best], f0 = F[st.freq], tip = $("tip");
+  tip.innerHTML = `${fmtHM(q.t)}<br>Δf ${fmtDf(dfOf(q, f0), true)}<br>${t("tipEl")} ${num(q.el, 1)}°<br>${t("tipDist")} ${num(q.range, 0)} km<br>v<sub>r</sub> ${num(q.rr / 1000, 2)} km/s`;
+  tip.hidden = false;
+  const box = $("chartBox").getBoundingClientRect();
+  let left = r.left - box.left + X(xs[best]) + 12;
+  if (left + 170 > box.width) left -= 190;
+  tip.style.left = Math.max(0, left) + "px";
+  tip.style.top = (r.top - box.top + 20) + "px";
+}
+function offHover() { $("tip").hidden = true; }
+
+// ---------- ses ----------
+let actx = null, nodes = null, raf = 0;
+const AUDIO_SEC = 20, BASE = 800;
+function stopAudio() {
+  if (nodes) { try { nodes.osc.stop(); } catch {} nodes = null; }
+  cancelAnimationFrame(raf);
+  st.playing = false;
+  $("play").textContent = t("play");
+}
+function playAudio() {
+  if (nodes) { stopAudio(); return; }
+  if (!st.track) return;
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  actx.resume();
+  const pts = st.track.pts;
+  const curve = new Float32Array(pts.map(q => BASE + dfOf(q, F.sput)));
+  const osc = actx.createOscillator(), gain = actx.createGain();
+  const t0 = actx.currentTime + 0.05;
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(curve[0], t0);
+  osc.frequency.setValueCurveAtTime(curve, t0, AUDIO_SEC);
+  gain.gain.setValueAtTime(0, actx.currentTime);
+  for (let k = 0; k < AUDIO_SEC; k += 0.6) {
+    gain.gain.setValueAtTime(0, t0 + k);
+    gain.gain.linearRampToValueAtTime(0.25, t0 + k + 0.01);
+    gain.gain.setValueAtTime(0.25, t0 + k + 0.29);
+    gain.gain.linearRampToValueAtTime(0, t0 + k + 0.3);
+  }
+  osc.connect(gain).connect(actx.destination);
+  osc.start(t0); osc.stop(t0 + AUDIO_SEC + 0.05);
+  nodes = { osc }; st.playing = true;
+  osc.onended = () => { if (nodes && nodes.osc === osc) stopAudio(); };
+  $("play").textContent = t("stop"); $("tip").hidden = true;
+  const tick = () => {
+    const frac = (actx.currentTime - t0) / AUDIO_SEC;
+    st.cur = Math.min(pts.length - 1, Math.max(0, Math.round(frac * (pts.length - 1))));
+    $("scrub").value = st.cur;
+    drawAll();
+    if (nodes) raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+}
+
+// ---------- akış ----------
+function recompute() {
+  stopAudio();
+  st.passes = findPasses();
+  const best = st.passes.reduce((b, p, i) => (p.maxEl > (st.passes[b] ? st.passes[b].maxEl : -1) ? i : b), 0);
+  st.sel = null;
+  select(st.passes.length ? best : -1);
+}
+
+async function fetchText(url, ms) {
+  const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), ms);
+  try { const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" }); if (!r.ok) throw new Error(r.status); return await r.text(); }
+  finally { clearTimeout(to); }
+}
+
+// Veri sırası: 1) repodaki tle.json (GitHub Actions her gün günceller) 2) CelesTrak'tan canlı 3) demo
+async function loadSats() {
+  try {
+    const j = JSON.parse(await fetchText("tle.json", 5000));
+    const txt = (j.satellites || []).map(x => `${x.name}\n${x.line1}\n${x.line2}`).join("\n");
+    const sats = parseTLE(txt, isSentinel);
+    if (!sats.length) throw new Error("empty");
+    st.sats = sats; st.src = "repo"; st.updated = Date.parse(j.updated) || null;
+    renderSource(); return;
+  } catch {}
+  try {
+    const sats = parseTLE(await fetchText("https://celestrak.org/NORAD/elements/gp.php?GROUP=resource&FORMAT=tle", 6000), isSentinel);
+    if (!sats.length) throw new Error("empty");
+    st.sats = sats; st.src = "live";
+  } catch {
+    st.sats = parseTLE(DEMO_TLE); st.src = "demo";
+  }
+  renderSource();
+}
+
+function initControls() {
+  const ps = $("preset");
+  PRESETS.forEach(([n], i) => { const o = document.createElement("option"); o.value = i; o.textContent = n; ps.appendChild(o); });
+  const custom = document.createElement("option"); custom.value = "c"; ps.appendChild(custom);
+  $("lat").value = st.lat; $("lon").value = st.lon;
+  ps.addEventListener("change", () => {
+    if (ps.value === "c") return;
+    const [, la, lo] = PRESETS[+ps.value]; st.lat = la; st.lon = lo; $("lat").value = la; $("lon").value = lo; recompute();
+  });
+  const onCoord = () => {
+    const la = parseFloat($("lat").value), lo = parseFloat($("lon").value);
+    if (!isFinite(la) || !isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) return;
+    st.lat = la; st.lon = lo; ps.value = "c"; recompute();
+  };
+  $("lat").addEventListener("change", onCoord); $("lon").addEventListener("change", onCoord);
+  $("minEl").addEventListener("change", e => { st.minEl = +e.target.value; recompute(); });
+  const setF = f => { st.freq = f; $("fSput").setAttribute("aria-pressed", f === "sput"); $("fX").setAttribute("aria-pressed", f === "x"); renderDetail(); };
+  $("fSput").addEventListener("click", () => setF("sput"));
+  $("fX").addEventListener("click", () => setF("x"));
+  $("play").addEventListener("click", playAudio);
+  $("scrub").addEventListener("input", e => { if (st.playing) stopAudio(); st.cur = +e.target.value; if (st.track) drawAll(); });
+  const ch = $("chart");
+  ch.addEventListener("mousemove", onHover); ch.addEventListener("mouseleave", offHover);
+  ch.addEventListener("touchstart", onHover, { passive: true }); ch.addEventListener("touchmove", onHover, { passive: true });
+  ch.addEventListener("touchend", offHover);
+  document.querySelectorAll(".langs button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
+  $("tleLoad").addEventListener("click", () => {
+    const sats = parseTLE($("tleIn").value);
+    if (!sats.length) { $("tleMsg").textContent = t("tleBad"); return; }
+    st.sats = sats; st.src = "pasted"; st.srcN = sats.length; renderSource();
+    $("tleMsg").textContent = t("tleOk", { n: sats.length }); recompute();
+  });
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => st.track && drawAll(), 120); });
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", () => st.track && drawAll());
+  new MutationObserver(() => st.track && drawAll()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+}
+
+async function start() {
+  initControls();
+  setLang(pickLang());
+  if (!S) { st.src = "fail"; renderSource(); return; }
+  st.sats = parseTLE(DEMO_TLE);
+  await loadSats();
+  recompute();
+}
+start();
+})();
+</script>
+</body>
+</html>
