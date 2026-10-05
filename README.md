@@ -4,7 +4,7 @@ Interactive tools and notebooks for [World Space Week 2026](https://www.worldspa
 
 ## Sentinel Overhead
 
-**Live:** `[https://<username>.github.io/world-space-week/sentinel-overhead/](https://eceozen.github.io/world-space-week-2026/sentinel-overhead/)`
+**Live:** [Sentinel Overhead](https://eceozen.github.io/world-space-week-2026/sentinel-overhead/)
 
 In 1957, the pitch of Sputnik's beep rose as it approached and fell as it moved away, and that Doppler shift was enough to work out its orbit. *Sentinel Overhead* applies the same physics to today's Earth observation satellites:
 
